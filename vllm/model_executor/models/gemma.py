@@ -37,7 +37,7 @@ from vllm.model_executor.layers.quantization import QuantizationConfig
 from vllm.model_executor.layers.rotary_embedding import get_rope
 from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 from vllm.model_executor.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+    ParallelLMHead, VocabParallelEmbedding)
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import IntermediateTensors
@@ -381,12 +381,18 @@ class GemmaForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
 
         self.config = config
         # currently all existing Gemma models have `tie_word_embeddings` enabled
-        assert config.tie_word_embeddings
+        # assert config.tie_word_embeddings
         self.lora_config = lora_config
 
         self.quant_config = quant_config
         self.model = GemmaModel(vllm_config=vllm_config,
                                 prefix=maybe_prefix(prefix, "model"))
+        if self.config.tie_word_embeddings:
+            self.lm_head_weight = self.model.embed_tokens.weight
+        else:
+            self.lm_head = ParallelLMHead(self.config.vocab_size,
+                                         self.config.hidden_size)
+            self.lm_head_weight = self.lm_head.weight
         self.logits_processor = LogitsProcessor(config.vocab_size)
         self.sampler = get_sampler()
         self.make_empty_intermediate_tensors = (
